@@ -6,13 +6,6 @@ k = data[0]
 idx = 1
 
 def update_flow_by_mapping(flows, path_res_indices, res_meta, q):
-    """
-    flows: list of original-edge flows
-    path_res_indices: list of indices (into residual edge list) forming the augmenting path
-    res_meta: list of tuples (orig_edge_index, direction) for each residual edge
-              direction = +1 for forward residual of original edge, -1 for backward residual
-    q: bottleneck
-    """
     for ridx in path_res_indices:
         orig_idx, direction = res_meta[ridx]
         if direction == 1:
@@ -21,14 +14,6 @@ def update_flow_by_mapping(flows, path_res_indices, res_meta, q):
             flows[orig_idx] -= q
 
 def build_residual(edges, capacities, flows):
-    """
-    Build residual-edge lists and metadata mapping to original edges.
-    Returns:
-      Gf_edges: list of (u,v)
-      Gf_caps: list of residual capacities (non-negative)
-      res_meta: list of (orig_index, direction) for each residual edge
-                direction = +1 forward (original u->v), -1 backward (v->u)
-    """
     Gf_edges = []
     Gf_caps = []
     res_meta = []
@@ -46,22 +31,15 @@ def build_residual(edges, capacities, flows):
     return Gf_edges, Gf_caps, res_meta
 
 def bfs_on_residual(Gf_edges, Gf_caps, s, t, n):
-    """
-    BFS on residual graph:
-    - Returns (path_res_indices, bottleneck) where path_res_indices is list of
-      residual-edge indices (into Gf_edges/Gf_caps) in order from s->t.
-    - If no path, returns (None, 0)
-    """
-    # build adjacency lists for residual graph using residual-edge indices
-    adj = [[] for _ in range(n + 1)]      # adjacency stores neighbor node
-    adj_ridx = [[] for _ in range(n + 1)] # adjacency stores residual-edge indices
+    adj = [[] for _ in range(n + 1)]     
+    adj_ridx = [[] for _ in range(n + 1)] 
     for ridx, ((u, v), cap) in enumerate(zip(Gf_edges, Gf_caps)):
         if cap > 0:
             adj[u].append(v)
             adj_ridx[u].append(ridx)
 
     parent_node = [-1] * (n + 1)
-    parent_ridx = [-1] * (n + 1)  # which residual-edge index was used to reach this node
+    parent_ridx = [-1] * (n + 1)  
     visited = [False] * (n + 1)
 
     dq = deque([s])
@@ -80,14 +58,14 @@ def bfs_on_residual(Gf_edges, Gf_caps, s, t, n):
                 parent_node[v] = u
                 parent_ridx[v] = ridx
                 if v == t:
-                    # reconstruct path (as residual-edge indices) and compute bottleneck
+                    
                     path_res = []
                     bottleneck = float('inf')
                     cur = t
                     while cur != s:
                         rid = parent_ridx[cur]
                         path_res.append(rid)
-                        # use Gf_caps[rid] to update bottleneck
+                        
                         if Gf_caps[rid] < bottleneck:
                             bottleneck = Gf_caps[rid]
                         cur = parent_node[cur]
@@ -128,5 +106,4 @@ for _ in range(k):
     ans = edmonds_karp(edges, capacities, s, t, n)
     out_lines.append(str(ans))
 
-# print results: one per line
 print("\n".join(out_lines))
