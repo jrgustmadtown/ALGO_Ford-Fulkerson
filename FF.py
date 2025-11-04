@@ -5,16 +5,19 @@ inputy = list(map(int, sys.stdin.buffer.read().split()))
 k = inputy[0]
 index = 1
 
+
 def update_flow(edges, flows, P, q):
     for i in range(len(P) - 1):
         u = P[i]
         v = P[i + 1]
         fixed = False
+
         for j in range(len(edges)):
             if edges[j] == (u, v):
                 flows[j] += q
                 fixed = True
                 break
+
         if not fixed:
             for j in range(len(edges)):
                 if edges[j] == (v, u):
@@ -22,86 +25,84 @@ def update_flow(edges, flows, P, q):
                     fixed = True
                     break
 
-def P_finder_bfs(edges, capacities, s, t, n):
-    adj = [[] for _ in range(n)]
-    adj_c = [[] for _ in range(n)]
 
-    for (u, v), c in zip(edges, capacities):
+def P_finder_bfs(edges, capacities, s, t, n):
+    adj = [[] for _ in range(n + 1)]
+    cap = [[] for _ in range(n + 1)]
+    edge_index = [[] for _ in range(n + 1)]
+
+    # build adjacency structure
+    for i, ((u, v), c) in enumerate(zip(edges, capacities)):
         if c > 0:
             adj[u].append(v)
-            adj_c[u].append(c)
+            cap[u].append(c)
+            edge_index[u].append(i)
 
-    visited = [False] * n
-    parent = [-1] * n
+    visited = [False] * (n + 1)
+    parent = [-1] * (n + 1)
+    parent_edge = [-1] * (n + 1)
 
     q = deque([s])
     visited[s] = True
 
     while q:
         u = q.popleft()
-        if u == t:
-            break
         for i in range(len(adj[u])):
             v = adj[u][i]
-            c = adj_c[u][i]
+            c = cap[u][i]
             if not visited[v] and c > 0:
                 visited[v] = True
                 parent[v] = u
+                parent_edge[v] = edge_index[u][i]
+                if v == t:
+                    # reconstruct path
+                    P = []
+                    bottleneck = float('inf')
+                    x = t
+                    while x != s:
+                        P.append(x)
+                        eidx = parent_edge[x]
+                        bottleneck = min(bottleneck, capacities[eidx])
+                        x = parent[x]
+                    P.append(s)
+                    P.reverse()
+                    return P, bottleneck
                 q.append(v)
 
-    if not visited[t]:
-        return None, -1
+    return None, -1
 
-    # reconstruct path
-    P = []
-    v = t
-    while v != -1:
-        P.append(v)
-        v = parent[v]
-    P.reverse()
-
-    # bottleneck
-    bottleneck = float('inf')
-    for i in range(len(P) - 1):
-        u = P[i]
-        v = P[i + 1]
-        for (x, y), c in zip(edges, capacities):
-            if (x, y) == (u, v):
-                bottleneck = min(bottleneck, c)
-    return P, bottleneck
 
 def residualmaker(edges, capacities, flows):
     Gf_edges = []
     Gf_capacities = []
-    for i, edge in enumerate(edges):
+    for i, (u, v) in enumerate(edges):
         # forward
-        Gf_edges.append(edge)
+        Gf_edges.append((u, v))
         Gf_capacities.append(capacities[i] - flows[i])
         # backward
-        Gf_edges.append((edge[1], edge[0]))
+        Gf_edges.append((v, u))
         Gf_capacities.append(flows[i])
     return Gf_edges, Gf_capacities
 
+
 def FF(edges, capacities, s, t, n):
     flows = [0 for _ in capacities]
-    max_flow = 0
+    maxflow = 0
 
     while True:
-        Gf_e, Gf_c = residualmaker(edges, capacities, flows)
-        P, q = P_finder_bfs(Gf_e, Gf_c, s, t, n)
+        Gf_edges, Gf_caps = residualmaker(edges, capacities, flows)
+        P, q = P_finder_bfs(Gf_edges, Gf_caps, s, t, n)
         if q == -1:
             break
         update_flow(edges, flows, P, q)
-        max_flow += q
+        maxflow += q
 
-    return max_flow, flows
+    return maxflow
 
 
 for _ in range(k):
     n = inputy[index]; index += 1
     m = inputy[index]; index += 1
-    s = 0
-    t = n - 1
 
     edges = []
     capacities = []
@@ -111,5 +112,6 @@ for _ in range(k):
         capacities.append(inputy[index])
         index += 1
 
-    maxflow, flows = FF(edges, capacities, s, t, n)
-    print(maxflow)
+    s, t = 1, n
+    sol = FF(edges, capacities, s, t, n)
+    print(sol)
