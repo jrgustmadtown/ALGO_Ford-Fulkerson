@@ -1,120 +1,132 @@
 import sys
 from collections import deque
 
-inputy = list(map(int, sys.stdin.buffer.read().split()))
-k = inputy[0]
-index = 1
+data = list(map(int, sys.stdin.buffer.read().split()))
+k = data[0]
+idx = 1
 
+def update_flow_by_mapping(flows, path_res_indices, res_meta, q):
+    """
+    flows: list of original-edge flows
+    path_res_indices: list of indices (into residual edge list) forming the augmenting path
+    res_meta: list of tuples (orig_edge_index, direction) for each residual edge
+              direction = +1 for forward residual of original edge, -1 for backward residual
+    q: bottleneck
+    """
+    for ridx in path_res_indices:
+        orig_idx, direction = res_meta[ridx]
+        if direction == 1:
+            flows[orig_idx] += q
+        else:
+            flows[orig_idx] -= q
 
-def update_flow(edges, flows, P, q):
-    for i in range(len(P) - 1):
-        u = P[i]
-        v = P[i + 1]
-        found = False
-        for j in range(len(edges)):
-            if edges[j] == (u, v):
-                flows[j] += q
-                found = True
-                break
-        if not found:
-            for j in range(len(edges)):
-                if edges[j] == (v, u):
-                    flows[j] -= q
-                    found = True
-                    break
-
-
-def P_finder_bfs(edges, capacities, s, t, n):
-    adj = [[] for _ in range(n + 1)]
-    cap = [[] for _ in range(n + 1)]
-
-    # Build adjacency lists only for positive capacity edges
-    for (u, v), c in zip(edges, capacities):
-        if c > 0:
-            adj[u].append(v)
-            cap[u].append(c)
-
-    parent = [-1] * (n + 1)
-    visited = [False] * (n + 1)
-    q = deque([s])
-    visited[s] = True
-
-    while q:
-        u = q.popleft()
-        for i in range(len(adj[u])):
-            v = adj[u][i]
-            c = cap[u][i]
-            if not visited[v] and c > 0:
-                parent[v] = u
-                visited[v] = True
-                if v == t:
-                    # Reconstruct path and find bottleneck
-                    P = []
-                    bottleneck = float('inf')
-                    x = t
-                    while x != s:
-                        P.append(x)
-                        prev = parent[x]
-                        # find capacity on this edge in residual graph
-                        for (a, b), cc in zip(edges, capacities):
-                            if a == prev and b == x and cc > 0:
-                                bottleneck = min(bottleneck, cc)
-                                break
-                        x = prev
-                    P.append(s)
-                    P.reverse()
-                    return P, bottleneck
-                q.append(v)
-
-    return None, -1
-
-
-def residualmaker(edges, capacities, flows):
+def build_residual(edges, capacities, flows):
+    """
+    Build residual-edge lists and metadata mapping to original edges.
+    Returns:
+      Gf_edges: list of (u,v)
+      Gf_caps: list of residual capacities (non-negative)
+      res_meta: list of (orig_index, direction) for each residual edge
+                direction = +1 forward (original u->v), -1 backward (v->u)
+    """
     Gf_edges = []
-    Gf_capacities = []
+    Gf_caps = []
+    res_meta = []
     for i, (u, v) in enumerate(edges):
-        # Forward residual
         fwd = capacities[i] - flows[i]
-        # Backward residual
         back = flows[i]
+        # forward residual edge (u->v)
         Gf_edges.append((u, v))
-        Gf_capacities.append(max(fwd, 0))  # no negative residuals
+        Gf_caps.append(fwd if fwd > 0 else 0)
+        res_meta.append((i, 1))
+        # backward residual edge (v->u)
         Gf_edges.append((v, u))
-        Gf_capacities.append(max(back, 0))
-    return Gf_edges, Gf_capacities
+        Gf_caps.append(back if back > 0 else 0)
+        res_meta.append((i, -1))
+    return Gf_edges, Gf_caps, res_meta
 
+def bfs_on_residual(Gf_edges, Gf_caps, s, t, n):
+    """
+    BFS on residual graph:
+    - Returns (path_res_indices, bottleneck) where path_res_indices is list of
+      residual-edge indices (into Gf_edges/Gf_caps) in order from s->t.
+    - If no path, returns (None, 0)
+    """
+    # build adjacency lists for residual graph using residual-edge indices
+    adj = [[] for _ in range(n + 1)]      # adjacency stores neighbor node
+    adj_ridx = [[] for _ in range(n + 1)] # adjacency stores residual-edge indices
+    for ridx, ((u, v), cap) in enumerate(zip(Gf_edges, Gf_caps)):
+        if cap > 0:
+            adj[u].append(v)
+            adj_ridx[u].append(ridx)
 
-def FF(edges, capacities, s, t, n):
-    flows = [0 for _ in capacities]
+    parent_node = [-1] * (n + 1)
+    parent_ridx = [-1] * (n + 1)  # which residual-edge index was used to reach this node
+    visited = [False] * (n + 1)
+
+    dq = deque([s])
+    visited[s] = True
+    parent_node[s] = -1
+
+    while dq:
+        u = dq.popleft()
+        if u == t:
+            break
+        for k_idx in range(len(adj[u])):
+            v = adj[u][k_idx]
+            ridx = adj_ridx[u][k_idx]
+            if not visited[v]:
+                visited[v] = True
+                parent_node[v] = u
+                parent_ridx[v] = ridx
+                if v == t:
+                    # reconstruct path (as residual-edge indices) and compute bottleneck
+                    path_res = []
+                    bottleneck = float('inf')
+                    cur = t
+                    while cur != s:
+                        rid = parent_ridx[cur]
+                        path_res.append(rid)
+                        # use Gf_caps[rid] to update bottleneck
+                        if Gf_caps[rid] < bottleneck:
+                            bottleneck = Gf_caps[rid]
+                        cur = parent_node[cur]
+                    path_res.reverse()
+                    return path_res, int(bottleneck)
+                dq.append(v)
+
+    return None, 0
+
+def edmonds_karp(edges, capacities, s, t, n):
+    m = len(edges)
+    flows = [0] * m
     maxflow = 0
-    iteration = 0
 
     while True:
-        iteration += 1
-        if iteration > 10000:  # safety break (shouldn't ever hit)
+        Gf_edges, Gf_caps, res_meta = build_residual(edges, capacities, flows)
+        path_res_indices, bottleneck = bfs_on_residual(Gf_edges, Gf_caps, s, t, n)
+        if path_res_indices is None or bottleneck == 0:
             break
-        Gf_edges, Gf_caps = residualmaker(edges, capacities, flows)
-        P, q = P_finder_bfs(Gf_edges, Gf_caps, s, t, n)
-        if q == -1 or P is None:
-            break
-        update_flow(edges, flows, P, q)
-        maxflow += q
+        # update original flows using mapping
+        update_flow_by_mapping(flows, path_res_indices, res_meta, bottleneck)
+        maxflow += bottleneck
 
     return maxflow
 
-
+out_lines = []
 for _ in range(k):
-    n = inputy[index]; index += 1
-    m = inputy[index]; index += 1
-
+    n = data[idx]; idx += 1
+    m = data[idx]; idx += 1
     edges = []
     capacities = []
-    for _ in range(m):
-        edges.append((inputy[index], inputy[index + 1]))
-        index += 2
-        capacities.append(inputy[index])
-        index += 1
-
+    for _e in range(m):
+        u = data[idx]; v = data[idx+1]; idx += 2
+        c = data[idx]; idx += 1
+        edges.append((u, v))
+        capacities.append(c)
     s, t = 1, n
-    sol = FF(edges, capacities, s, t, n)
-    print(sol)
+    ans = edmonds_karp(edges, capacities, s, t, n)
+    out_lines.append(str(ans))
+
+# print results: one per line
+print("\n".join(out_lines))
